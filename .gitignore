@@ -1,0 +1,11 @@
+# 数据文件：这是个人记录，不该传到公开仓库
+records.json
+
+# Python 编译缓存
+__pycache__/
+*.pyc
+
+# 系统文件
+Thumbs.db
+desktop.ini
+.DS_Store

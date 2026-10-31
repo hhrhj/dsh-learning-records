@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我的 DSH 学习记录</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: #f5f6fa; color: #2c3e50; line-height: 1.7;
+    padding: 0 16px 60px;
+  }
+  header { max-width: 860px; margin: 0 auto; padding: 44px 0 22px; text-align: center; }
+  header h1 { font-size: 30px; letter-spacing: 1px; }
+  header p  { color: #7f8c8d; margin-top: 8px; font-size: 15px; }
+
+  .stats {
+    max-width: 860px; margin: 0 auto 22px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+  }
+  .stat { background: #fff; border-radius: 14px; padding: 16px 12px; text-align: center; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+  .stat .num { font-size: 25px; font-weight: 700; color: #667eea; }
+  .stat .label { font-size: 13px; color: #95a5a6; margin-top: 2px; }
+
+  main { max-width: 860px; margin: 0 auto; }
+
+  /* 分类筛选条 */
+  .tagbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .tagbtn {
+    border: 1px solid #dfe4ea; background: #fff; color: #7f8c8d;
+    padding: 7px 16px; border-radius: 20px; font-size: 13.5px;
+    cursor: pointer; font-family: inherit; transition: .2s;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .tagbtn:hover { border-color: #b8c0e0; color: #5568d3; }
+  .tagbtn.active { background: #667eea; border-color: #667eea; color: #fff; }
+  .tagbtn .cnt { font-size: 11.5px; opacity: .75; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  /* 搜索栏 */
+  .searchbar { position: relative; margin-bottom: 16px; }
+  .searchbar input {
+    width: 100%; padding: 13px 44px;
+    border: 1px solid #dfe4ea; border-radius: 30px;
+    font-family: inherit; font-size: 15px; color: #2c3e50;
+    outline: none; transition: .2s; background: #fff;
+  }
+  .searchbar input:focus { border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,.12); }
+  .searchbar .ico { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #b2bec3; font-size: 16px; }
+  .searchbar .clr {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    border: none; background: #eef0f5; color: #7f8c8d; cursor: pointer;
+    width: 26px; height: 26px; border-radius: 50%; font-size: 15px; line-height: 1;
+    display: none;
+  }
+  .searchbar .clr:hover { background: #e2e6ee; }
+  .hint { font-size: 13px; color: #95a5a6; margin: 0 4px 12px; min-height: 18px; }
+
+  /* 表单 */
+  .editor {
+    background: #fff; border-radius: 16px; padding: 22px 26px;
+    margin-bottom: 20px; box-shadow: 0 2px 12px rgba(0,0,0,.06);
+    border: 1px solid transparent; transition: .25s;
+  }
+  .editor.editing { border-color: #f0b429; box-shadow: 0 0 0 3px rgba(240,180,41,.13); }
+  .editor h2 { font-size: 16px; margin-bottom: 14px; color: #34495e; }
+  .editor input[type=text], .editor textarea {
+    width: 100%; padding: 10px 13px; margin-bottom: 10px;
+    border: 1px solid #dfe4ea; border-radius: 9px;
+    font-family: inherit; font-size: 14.5px; color: #2c3e50;
+    outline: none; transition: .2s;
+  }
+  .editor input:focus, .editor textarea:focus {
+    border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,.12);
+  }
+  .editor textarea { resize: vertical; min-height: 72px; }
+  .editor .row { display: flex; gap: 10px; }
+  .editor .row input, .editor .row select {
+    padding: 10px 13px; margin-bottom: 10px;
+    border: 1px solid #dfe4ea; border-radius: 9px;
+    font-family: inherit; font-size: 14.5px; color: #2c3e50;
+    outline: none; transition: .2s;
+  }
+  .editor .row input:focus, .editor .row select:focus {
+    border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,.12);
+  }
+  .btn {
+    padding: 11px 26px; border: none; border-radius: 30px;
+    font-size: 15px; cursor: pointer; font-family: inherit;
+    background: #667eea; color: #fff; transition: .25s;
+  }
+  .btn:hover { background: #5568d3; transform: translateY(-1px); }
+  .btn.ghost { background: #eef0f5; color: #7f8c8d; }
+  .btn.ghost:hover { background: #e2e6ee; }
+  .btn.save { background: #e67e22; }
+  .btn.save:hover { background: #d35400; }
+
+  /* 卡片 */
+  .card {
+    background: #fff; border-radius: 16px; padding: 20px 24px;
+    margin-bottom: 14px; box-shadow: 0 2px 12px rgba(0,0,0,.06);
+    border-left: 4px solid #667eea; position: relative;
+  }
+  .card.editing-now { background: #fffbf0; }
+  .card h3 { font-size: 16.5px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-right: 76px; }
+  .chiptag {
+    font-size: 11px; padding: 2px 9px; border-radius: 10px;
+    font-weight: 400; white-space: nowrap;
+  }
+  .tag { font-size: 11px; font-weight: 400; padding: 2px 9px; border-radius: 10px; background: #eef0ff; color: #667eea; }
+  .tag.done { background: #e8f8f0; color: #27ae60; }
+  .tag.todo { background: #fff4e5; color: #e67e22; }
+  .card p { font-size: 14.5px; color: #555; white-space: pre-wrap; }
+  .card .date { font-size: 12px; color: #b2bec3; margin-top: 10px; }
+  .actions { position: absolute; top: 12px; right: 12px; display: flex; gap: 4px; }
+  .icon-btn {
+    background: none; border: none; cursor: pointer;
+    color: #ccd1d9; font-size: 17px; line-height: 1;
+    width: 30px; height: 30px; border-radius: 8px; transition: .2s;
+  }
+  .icon-btn:hover { background: #eef0ff; color: #667eea; }
+  .icon-btn.del:hover { background: #fdeaea; color: #e74c3c; }
+  mark { background: #fff3bf; color: inherit; padding: 0 1px; border-radius: 2px; }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .tbtn {
+    border: 1px solid #dfe4ea; background: #fff; color: #7f8c8d;
+    padding: 8px 16px; border-radius: 20px; font-size: 13.5px;
+    cursor: pointer; font-family: inherit; transition: .2s;
+  }
+  .tbtn:hover { border-color: #b8c0e0; color: #5568d3; background: #fafbff; }
+  .tbtn.danger:hover { border-color: #f5b7b1; color: #e74c3c; background: #fff5f5; }
+
+  .empty { text-align: center; color: #b2bec3; padding: 44px 0; font-size: 14px; }
+  footer { max-width: 860px; margin: 34px auto 0; text-align: center; font-size: 13px; color: #b2bec3; }
+
+  @media (max-width: 600px) {
+    .stats { grid-template-columns: 1fr; }
+    header h1 { font-size: 23px; }
+    .card, .editor { padding: 16px; }
+    .editor .row { flex-direction: column; gap: 0; }
+    .card h3 { padding-right: 0; margin-right: 70px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>我的 DSH 学习记录</h1>
+  <p>记录我做过的、学到的、踩过的坑</p>
+</header>
+
+<div class="stats">
+  <div class="stat"><div class="num" id="statTotal">0</div><div class="label">总记录</div></div>
+  <div class="stat"><div class="num" id="statDone">0</div><div class="label">已完成</div></div>
+  <div class="stat"><div class="num" id="statTodo">0</div><div class="label">待办</div></div>
+</div>
+
+<main>
+  <div id="syncBar" style="display:none;margin-bottom:14px;padding:11px 18px;border-radius:12px;font-size:13.5px;line-height:1.6"></div>
+
+  <div class="toolbar">
+    <button class="tbtn" id="btnExportJson">导出备份（.json）</button>
+    <button class="tbtn" id="btnExportMd">导出成 Markdown</button>
+    <button class="tbtn" id="btnImport">从文件导入</button>
+    <input type="file" id="fileInput" accept=".json" style="display:none">
+    <button class="tbtn danger" id="btnWipe">清空全部记录</button>
+  </div>
+
+  <div class="tagbar" id="tagbar"></div>
+
+  <div class="searchbar">
+    <span class="ico">⌕</span>
+    <input type="text" id="inSearch" placeholder="搜索标题、说明、日期或分类…">
+    <button class="clr" id="btnClearSearch" title="清空搜索">×</button>
+  </div>
+  <div class="hint" id="hint"></div>
+
+  <div class="editor" id="editor">
+    <h2 id="editorTitle">添加一条记录</h2>
+    <input type="text" id="inTitle" placeholder="标题，比如：学会了给网页加分类">
+    <textarea id="inDesc" placeholder="补充说明（可不填）"></textarea>
+    <div class="row">
+      <input type="text" id="inTag" list="tagSuggest" placeholder="分类，如 学习 / 踩坑 / 成果">
+      <datalist id="tagSuggest">
+        <option value="学习"></option>
+        <option value="踩坑"></option>
+        <option value="成果"></option>
+        <option value="想法"></option>
+      </datalist>
+      <input type="text" id="inDate" placeholder="日期">
+      <select id="inStatus">
+        <option value="done">已完成</option>
+        <option value="todo">待办</option>
+      </select>
+    </div>
+    <button class="btn" id="btnAdd">添加</button>
+    <button class="btn ghost" id="btnCancel" style="display:none">取消修改</button>
+    <button class="btn ghost" id="btnClear">清空表单</button>
+  </div>
+
+  <div id="list"></div>
+</main>
+
+<footer>用 DSH 边学边做 · 2026</footer>
+
+<script>
+  var STORAGE_KEY = 'dsh_learning_records';
+
+  // 分类配色表（找不到的自定义分类用默认灰蓝）
+  var TAG_COLORS = {
+    '学习': '#667eea',
+    '踩坑': '#e74c3c',
+    '成果': '#27ae60',
+    '想法': '#f39c12'
+  };
+  function tagColor(t) { return TAG_COLORS[t] || '#8e9aaf'; }
+
+  var seed = [
+    { id: 1, title: '第 1 天：搭好 DSH 环境', desc: '装好桌面版，把 33 个插件理顺，关掉 6 个用不上的，文档分成「给我看的」和「给 AI 看的」两类。', date: '2026-10-31', status: 'done', tag: '成果' },
+    { id: 2, title: '第 2 天：做第一个网页', desc: '学会了网页由三部分组成：HTML 管内容、CSS 管长相、JavaScript 管交互。', date: '2026-10-31', status: 'done', tag: '学习' }
+  ];
+
+  // ============ 数据层：优先服务器，退路是浏览器存储 ============
+  var API = '/api/records';
+  var serverMode = false;   // true = 已连上服务器
+
+  function showBar(text, color) {
+    var bar = document.getElementById('syncBar');
+    bar.style.display = 'block';
+    bar.style.background = color === 'warn' ? '#fff8e6' : (color === 'err' ? '#fdeaea' : '#eef4ff');
+    bar.style.color = color === 'warn' ? '#a06a00' : (color === 'err' ? '#c0392b' : '#4a5fc1');
+    bar.innerHTML = text;
+  }
+
+  function hideBar() { document.getElementById('syncBar').style.display = 'none'; }
+
+  // 本地存储兜底
+  function localLoad() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw === null) return null;   // 注意：null 表示"从没存过"
+      return JSON.parse(raw);
+    } catch (e) { return null; }
+  }
+  function localSave(list) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); } catch (e) {}
+  }
+
+  // 和服务器同步
+  function pushToServer() {
+    if (!serverMode) return;
+    fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ records: records })
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function (j) {
+      if (!j.ok) throw new Error(j.error || '保存失败');
+      hideBar();
+    }).catch(function (e) {
+      serverMode = false;
+      showBar('⚠️ 保存到文件失败（' + String(e.message || e).slice(0, 60) + '）。已暂时存在浏览器里，重新启动服务器后需要手动导出再导入。', 'err');
+    });
+  }
+
+  // 统一保存入口
+  function save(list) {
+    localSave(list);       // 始终存一份在浏览器
+    pushToServer();        // 有服务器就同步过去
+  }
+
+  var records = [];
+
+  // 启动时加载
+  function boot() {
+    fetch(API, { cache: 'no-store' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function (j) {
+        if (!j.ok) throw new Error(j.error || '读取失败');
+        serverMode = true;
+
+        if (Array.isArray(j.records) && j.records.length > 0) {
+          records = j.records;
+          showBar('✅ 已连上本地服务器，数据保存在 <b>records.json</b> 文件里。这个文件可以放进网盘同步。', 'ok');
+        } else {
+          // 服务器上还没有数据：看看浏览器里有没有旧的
+          var local = localLoad();
+          if (local && local.length > 0) {
+            records = local;
+            pushToServer();
+            showBar('✅ 已连上本地服务器，并把浏览器里的 ' + local.length + ' 条旧记录迁移到 <b>records.json</b>。', 'ok');
+          } else {
+            records = seed.slice();
+            pushToServer();
+            showBar('✅ 已连上本地服务器，写入了两条示例记录到 <b>records.json</b>。', 'ok');
+          }
+        }
+        render();
+      })
+      .catch(function () {
+        // 服务器没开：退回纯浏览器模式
+        serverMode = false;
+        var local = localLoad();
+        records = local && local.length ? local : seed.slice();
+        showBar('⚠️ 没连上本地服务器（当前是纯浏览器模式，数据只存在这个浏览器里）。<br>要让它存成文件：双击 <b>启动学习记录页.bat</b>，然后用它打开的网址访问。', 'warn');
+        render();
+      });
+  }
+  var editingId = null;
+  var keyword = '';
+  var tagFilter = '';   // 空字符串 = 全部
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function mark(s, k) {
+    var safe = esc(s);
+    if (!k) return safe;
+    var safeK = esc(k).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    try { return safe.replace(new RegExp(safeK, 'gi'), function (m) { return '<mark>' + m + '</mark>'; }); }
+    catch (e) { return safe; }
+  }
+
+  function tagOf(r) { return (r.tag || '').trim(); }
+
+  function getFiltered() {
+    var k = keyword.trim().toLowerCase();
+    return records.filter(function (r) {
+      // 分类筛选
+      if (tagFilter === '__none__') {
+        if (tagOf(r) !== '') return false;
+      } else if (tagFilter && tagOf(r) !== tagFilter) {
+        return false;
+      }
+      // 关键词
+      if (!k) return true;
+      return String(r.title || '').toLowerCase().indexOf(k) >= 0
+          || String(r.desc || '').toLowerCase().indexOf(k) >= 0
+          || String(r.date || '').toLowerCase().indexOf(k) >= 0
+          || String(r.tag || '').toLowerCase().indexOf(k) >= 0;
+    });
+  }
+
+  // 生成分类筛选条
+  function renderTagbar() {
+    var counts = {};
+    var untagged = 0;
+    records.forEach(function (r) {
+      var t = tagOf(r);
+      if (t === '') untagged++;
+      else counts[t] = (counts[t] || 0) + 1;
+    });
+
+    var names = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; });
+    var bar = document.getElementById('tagbar');
+    var html = '';
+
+    html += '<button class="tagbtn' + (tagFilter === '' ? ' active' : '') + '" data-tag="">全部 <span class="cnt">' + records.length + '</span></button>';
+
+    names.forEach(function (t) {
+      html += '<button class="tagbtn' + (tagFilter === t ? ' active' : '') + '" data-tag="' + esc(t) + '">'
+        + '<span class="dot" style="background:' + tagColor(t) + '"></span>'
+        + esc(t) + ' <span class="cnt">' + counts[t] + '</span></button>';
+    });
+
+    if (untagged > 0) {
+      html += '<button class="tagbtn' + (tagFilter === '__none__' ? ' active' : '') + '" data-tag="__none__">'
+        + '<span class="dot" style="background:#ccd1d9"></span>未分类 <span class="cnt">' + untagged + '</span></button>';
+    }
+
+    bar.innerHTML = html;
+  }
+
+  function render() {
+    var k = keyword.trim();
+
+    document.getElementById('statTotal').textContent = records.length;
+    document.getElementById('statDone').textContent = records.filter(function (r) { return r.status === 'done'; }).length;
+    document.getElementById('statTodo').textContent = records.filter(function (r) { return r.status === 'todo'; }).length;
+
+    renderTagbar();
+
+    var shown = getFiltered();
+    var hint = document.getElementById('hint');
+    hint.textContent = (k || tagFilter) ? ('显示 ' + shown.length + ' 条，共 ' + records.length + ' 条') : '';
+    document.getElementById('btnClearSearch').style.display = k ? 'block' : 'none';
+
+    var list = document.getElementById('list');
+
+    if (records.length === 0) {
+      list.innerHTML = '<div class="empty">还没有记录，在上面添加第一条吧</div>';
+      return;
+    }
+    if (shown.length === 0) {
+      list.innerHTML = '<div class="empty">这个条件下没有记录</div>';
+      return;
+    }
+
+    list.innerHTML = shown.map(function (r) {
+      var cls = r.status === 'done' ? 'done' : 'todo';
+      var txt = r.status === 'done' ? '已完成' : '待办';
+      var isEditing = String(r.id) === String(editingId);
+      var t = tagOf(r);
+      var tagHtml = t
+        ? '<span class="chiptag" style="background:' + tagColor(t) + '1f;color:' + tagColor(t) + '">' + mark(t, k) + '</span>'
+        : '';
+
+      return '' +
+        '<div class="card" style="border-left-color:' + (t ? tagColor(t) : '#667eea') + (isEditing ? '' : '') + '">' +
+          '<div class="actions">' +
+            '<button class="icon-btn" data-edit="' + r.id + '" title="修改这条">✎</button>' +
+            '<button class="icon-btn del" data-del="' + r.id + '" title="删除这条">×</button>' +
+          '</div>' +
+          '<h3>' + mark(r.title, k) + ' ' + tagHtml + ' <span class="tag ' + cls + '">' + txt + '</span></h3>' +
+          (r.desc ? '<p>' + mark(r.desc, k) + '</p>' : '') +
+          (r.date ? '<div class="date">' + mark(r.date, k) + '</div>' : '') +
+        '</div>';
+    }).join('');
+  }
+
+  function resetForm() {
+    editingId = null;
+    document.getElementById('inTitle').value = '';
+    document.getElementById('inDesc').value = '';
+    document.getElementById('inTag').value = '';
+    document.getElementById('inStatus').value = 'done';
+    document.getElementById('inDate').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('btnAdd').textContent = '添加';
+    document.getElementById('btnAdd').className = 'btn';
+    document.getElementById('btnCancel').style.display = 'none';
+    document.getElementById('editorTitle').textContent = '添加一条记录';
+    document.getElementById('editor').className = 'editor';
+  }
+
+  function startEdit(id) {
+    var r = null;
+    for (var i = 0; i < records.length; i++) {
+      if (String(records[i].id) === String(id)) { r = records[i]; break; }
+    }
+    if (!r) return;
+
+    editingId = r.id;
+    document.getElementById('inTitle').value = r.title || '';
+    document.getElementById('inDesc').value = r.desc || '';
+    document.getElementById('inTag').value = r.tag || '';
+    document.getElementById('inDate').value = r.date || '';
+    document.getElementById('inStatus').value = r.status || 'done';
+
+    document.getElementById('btnAdd').textContent = '保存修改';
+    document.getElementById('btnAdd').className = 'btn save';
+    document.getElementById('btnCancel').style.display = 'inline-block';
+    document.getElementById('editorTitle').textContent = '正在修改：' + (r.title || '');
+    document.getElementById('editor').className = 'editor editing';
+
+    render();
+    document.getElementById('editor').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.getElementById('inTitle').focus();
+  }
+
+  // 保存
+  document.getElementById('btnAdd').addEventListener('click', function () {
+    var title  = document.getElementById('inTitle').value.trim();
+    var desc   = document.getElementById('inDesc').value.trim();
+    var tag    = document.getElementById('inTag').value.trim();
+    var date   = document.getElementById('inDate').value.trim();
+    var status = document.getElementById('inStatus').value;
+
+    if (!title) {
+      alert('标题不能为空');
+      document.getElementById('inTitle').focus();
+      return;
+    }
+
+    if (editingId !== null) {
+      for (var i = 0; i < records.length; i++) {
+        if (String(records[i].id) === String(editingId)) {
+          records[i].title = title;
+          records[i].desc = desc;
+          records[i].tag = tag;
+          records[i].date = date || new Date().toISOString().slice(0, 10);
+          records[i].status = status;
+          break;
+        }
+      }
+    } else {
+      records.unshift({
+        id: Date.now(),
+        title: title,
+        desc: desc,
+        tag: tag,
+        date: date || new Date().toISOString().slice(0, 10),
+        status: status
+      });
+    }
+
+    save(records);
+    resetForm();
+    render();
+    document.getElementById('inTitle').focus();
+  });
+
+  document.getElementById('btnCancel').addEventListener('click', function () { resetForm(); render(); });
+  document.getElementById('btnClear').addEventListener('click', function () { resetForm(); render(); });
+
+  document.getElementById('inSearch').addEventListener('input', function (e) {
+    keyword = e.target.value;
+    render();
+  });
+
+  document.getElementById('btnClearSearch').addEventListener('click', function () {
+    keyword = '';
+    document.getElementById('inSearch').value = '';
+    render();
+    document.getElementById('inSearch').focus();
+  });
+
+  // 分类筛选（事件委托）
+  document.getElementById('tagbar').addEventListener('click', function (e) {
+    var btn = e.target.closest('.tagbtn');
+    if (!btn) return;
+    tagFilter = btn.getAttribute('data-tag') || '';
+    render();
+  });
+
+  // 卡片操作
+  document.getElementById('list').addEventListener('click', function (e) {
+    var editId = e.target.getAttribute('data-edit');
+    if (editId) { startEdit(editId); return; }
+
+    var delId = e.target.getAttribute('data-del');
+    if (delId) {
+      if (!confirm('确定删除这条记录吗？删了就找不回来了。')) return;
+      var wasEditing = String(delId) === String(editingId);
+      records = records.filter(function (r) { return String(r.id) !== String(delId); });
+      save(records);
+      if (wasEditing) resetForm();
+      render();
+    }
+  });
+
+  document.getElementById('inTitle').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') document.getElementById('btnAdd').click();
+  });
+
+
+  // ============ 导出 / 导入 ============
+  function todayStr() {
+    var d = new Date();
+    var p = function (n) { return n < 10 ? '0' + n : '' + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+
+  function download(filename, text, mime) {
+    var blob = new Blob([text], { type: (mime || 'text/plain') + ';charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  // 导出 JSON（完整备份，能再导回来）
+  document.getElementById('btnExportJson').addEventListener('click', function () {
+    if (records.length === 0) { alert('还没有记录可以导出'); return; }
+    var payload = {
+      _type: 'dsh-learning-records',
+      _version: 1,
+      _exportedAt: new Date().toISOString(),
+      total: records.length,
+      records: records
+    };
+    download('DSH学习记录备份-' + todayStr() + '.json', JSON.stringify(payload, null, 2), 'application/json');
+  });
+
+  // 导出 Markdown（给人看、给 AI 喂）
+  document.getElementById('btnExportMd').addEventListener('click', function () {
+    if (records.length === 0) { alert('还没有记录可以导出'); return; }
+
+    var lines = [];
+    lines.push('# 我的 DSH 学习记录');
+    lines.push('');
+    lines.push('> 导出时间：' + new Date().toLocaleString('zh-CN') + '　共 ' + records.length + ' 条');
+    lines.push('');
+
+    // 按分类分组
+    var groups = {};
+    records.forEach(function (r) {
+      var t = tagOf(r) || '未分类';
+      (groups[t] = groups[t] || []).push(r);
+    });
+
+    Object.keys(groups).sort().forEach(function (t) {
+      lines.push('## ' + t + '（' + groups[t].length + ' 条）');
+      lines.push('');
+      groups[t].forEach(function (r) {
+        var flag = r.status === 'done' ? '✅' : '⬜';
+        lines.push('### ' + flag + ' ' + (r.title || '(无标题)'));
+        if (r.desc) { lines.push(''); lines.push(r.desc); }
+        if (r.date) { lines.push(''); lines.push('*' + r.date + '*'); }
+        lines.push('');
+      });
+    });
+
+    download('DSH学习记录-' + todayStr() + '.md', lines.join('\n'), 'text/markdown');
+  });
+
+  // 导入
+  document.getElementById('btnImport').addEventListener('click', function () {
+    document.getElementById('fileInput').click();
+  });
+
+  document.getElementById('fileInput').addEventListener('change', function (e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    var reader = new FileReader();
+    reader.onload = function (ev) {
+      try {
+        var data = JSON.parse(ev.target.result);
+        var incoming = null;
+
+        if (Array.isArray(data)) incoming = data;
+        else if (data && Array.isArray(data.records)) incoming = data.records;
+
+        if (!incoming) { alert('这个文件里没有找到记录数据。\n请选择用本页面导出的 .json 备份文件。'); return; }
+
+        // 基本校验
+        incoming = incoming.filter(function (r) { return r && typeof r.title === 'string'; });
+        if (incoming.length === 0) { alert('文件里的记录格式不对，没有导入任何内容。'); return; }
+
+        var mode = confirm(
+          '要导入 ' + incoming.length + ' 条记录。\n\n' +
+          '点【确定】= 追加到现有记录后面（不会删掉你现在的）\n' +
+          '点【取消】= 放弃导入'
+        );
+        if (!mode) return;
+
+        // 去重：标题+日期相同视为同一条
+        var existKeys = {};
+        records.forEach(function (r) { existKeys[(r.title || '') + '|' + (r.date || '')] = true; });
+
+        var added = 0;
+        incoming.forEach(function (r) {
+          var key = (r.title || '') + '|' + (r.date || '');
+          if (existKeys[key]) return;
+          records.unshift({
+            id: Date.now() + Math.floor(Math.random() * 100000),
+            title: r.title || '',
+            desc: r.desc || '',
+            tag: r.tag || '',
+            date: r.date || '',
+            status: r.status === 'todo' ? 'todo' : 'done'
+          });
+          added++;
+        });
+
+        save(records);
+        render();
+        alert('导入完成：新增 ' + added + ' 条' + (incoming.length - added > 0 ? '，跳过重复 ' + (incoming.length - added) + ' 条' : ''));
+      } catch (err) {
+        alert('导入失败：这个文件不是有效的备份文件。\n\n' + String(err).slice(0, 120));
+      }
+    };
+    reader.readAsText(file, 'utf-8');
+    e.target.value = '';
+  });
+
+  // 清空全部
+  document.getElementById('btnWipe').addEventListener('click', function () {
+    if (records.length === 0) { alert('已经是空的了'); return; }
+    var first = confirm('要清空全部 ' + records.length + ' 条记录吗？\n\n强烈建议先点「导出备份」，否则删了就找不回来。');
+    if (!first) return;
+    var second = confirm('再确认一次：真的清空全部记录？\n这是不可撤销的操作。');
+    if (!second) return;
+    records = [];
+    save(records);
+    resetForm();
+    render();
+  });
+
+  document.getElementById('inDate').value = new Date().toISOString().slice(0, 10);
+  boot();
+</script>
+
+</body>
+</html>
