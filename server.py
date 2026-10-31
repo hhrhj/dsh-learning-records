@@ -109,6 +109,8 @@ def main():
     print("这个黑窗口不能关。关掉 = 服务器停止。")
     print("要停止就按 Ctrl + C，或者直接关窗口。")
     print("=" * 46)
+    print("")
+    print("提示：这个窗口关掉后，网页就读不到数据了。")
 
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     try:
