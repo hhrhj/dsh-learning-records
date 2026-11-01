@@ -17,7 +17,7 @@
 
   .stats {
     max-width: 860px; margin: 0 auto 22px;
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
   }
   .stat { background: #fff; border-radius: 14px; padding: 16px 12px; text-align: center; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
   .stat .num { font-size: 25px; font-weight: 700; color: #667eea; }
@@ -48,6 +48,19 @@
     cursor: pointer; font-family: inherit; margin-left: 6px;
   }
   .clrfilter:hover { border-color: #b8c0e0; color: #5568d3; }
+  .jumpbar { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; }
+  .jumpbar button {
+    border: 1px solid #dfe4ea; background: #fff; color: #7f8c8d;
+    padding: 2px 9px; border-radius: 12px; font-size: 12px;
+    cursor: pointer; font-family: inherit; line-height: 1.5;
+  }
+  .jumpbar button:hover { border-color: #b8c0e0; color: #5568d3; }
+  .jumpbar .hitno { font-size: 12px; color: #95a5a6; min-width: 44px; text-align: center; }
+  .card.flash { animation: flashcard .9s ease; }
+  @keyframes flashcard {
+    0%   { box-shadow: 0 0 0 3px rgba(102,126,234,.55); }
+    100% { box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+  }
   .chart .emptyc { text-align: center; color: #b2bec3; font-size: 13.5px; padding: 34px 0; }
   .chart .tiph { font-size: 12px; color: #b2bec3; margin-top: 2px; text-align: right; }
 
@@ -216,6 +229,7 @@
   <div class="stat"><div class="num" id="statTotal">0</div><div class="label">总记录</div></div>
   <div class="stat"><div class="num" id="statDone">0</div><div class="label">已完成</div></div>
   <div class="stat"><div class="num" id="statTodo">0</div><div class="label">待办</div></div>
+  <div class="stat"><div class="num" id="statStreak">0</div><div class="label">连续记录（天）</div></div>
 </div>
 
 <div class="chart">
@@ -225,6 +239,7 @@
       <button id="btnChartTag" class="on">按分类</button>
       <button id="btnChartDay">按日期</button>
       <button id="btnChartStatus">按状态</button>
+      <button id="btnChartMonth">按月</button>
     </div>
   </div>
   <div id="chartBox"></div>
@@ -237,6 +252,7 @@
   <div class="toolbar">
     <button class="tbtn" id="btnExportJson">导出备份（.json）</button>
     <button class="tbtn" id="btnExportMd">导出成 Markdown</button>
+    <button class="tbtn" id="btnExportPng">导出成图片（PNG）</button>
     <button class="tbtn" id="btnImport">从文件导入</button>
     <input type="file" id="fileInput" accept=".json" style="display:none">
     <button class="tbtn" id="btnClearDone">清理已完成</button>
@@ -395,6 +411,9 @@
   var tagFilter = '';   // 空字符串 = 全部
   var dateFilter = '';  // 点日期柱子产生的日期筛选
   var statusFilter = '';  // 点状态柱子产生的状态筛选
+  var monthFilter = '';   // 点月份柱子产生的月份筛选
+  var matchHits = [];     // 搜索命中的卡片索引（用于上一条/下一条跳转）
+  var hitPos = -1;        // 当前停在第几个命中
 
   function esc(s) {
     return String(s == null ? '' : s)
@@ -412,8 +431,48 @@
 
   function tagOf(r) { return (r.tag || '').trim(); }
 
+  // 统计一条记录里命中了几次（标题+说明+日期+分类）
+  function countHits(r, k) {
+    if (!k) return 0;
+    var key = k.toLowerCase();
+    var n = 0;
+    [r.title, r.desc, r.date, r.tag].forEach(function (f) {
+      var s = String(f == null ? '' : f).toLowerCase();
+      if (!s) return;
+      var from = 0, at;
+      while ((at = s.indexOf(key, from)) !== -1) { n++; from = at + key.length || at + 1; if (key.length === 0) break; }
+    });
+    return n;
+  }
+
+  // 收集所有命中点，按卡片顺序排好
+  function buildHitList(shown, k) {
+    var out = [];
+    shown.forEach(function (r, idx) {
+      var c = countHits(r, k);
+      for (var i = 0; i < c; i++) out.push(idx);
+    });
+    return out;
+  }
+
+  // 跳到第 pos 个命中：滚动到那张卡 + 闪一下
+  function jumpToHit(pos) {
+    if (matchHits.length === 0) return;
+    hitPos = ((pos % matchHits.length) + matchHits.length) % matchHits.length;
+    var idx = matchHits[hitPos];
+    var card = document.querySelector('.card[data-idx="' + idx + '"]');
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      card.classList.remove('flash');
+      void card.offsetWidth;          // 强制重排，让动画能重播
+      card.classList.add('flash');
+    }
+    var no = document.getElementById('hitNo');
+    if (no) no.textContent = (hitPos + 1) + '/' + matchHits.length;
+  }
+
   // ============ 统计图：纯手绘 SVG，不依赖任何外部图表库 ============
-  var chartMode = 'tag';   // tag = 按分类，day = 按日期，status = 按状态
+  var chartMode = 'tag';   // tag = 按分类，day = 按日期，status = 按状态，month = 按月
 
   function chartData() {
     var map = {}, order = [];
@@ -425,6 +484,15 @@
         map[d]++;
       });
       order.sort();                                            // 日期从早到晚
+    } else if (chartMode === 'month') {
+      records.forEach(function (r) {
+        var d = String(r.date || '').trim();
+        if (d.length < 7) return;
+        var mon = d.slice(0, 7);                                 // 2026-10-31 → 2026-10
+        if (!map[mon]) { map[mon] = 0; order.push(mon); }
+        map[mon]++;
+      });
+      order.sort();                                            // 月份升序
     } else if (chartMode === 'status') {
       records.forEach(function (r) {
         var st = r.status === 'todo' ? '待办' : '已完成';
@@ -466,7 +534,7 @@
     var barW = Math.min(56, Math.max(12, slot * 0.55));
 
     var colorOf;
-    if (chartMode === 'day') {
+    if (chartMode === 'day' || chartMode === 'month') {
       colorOf = function () { return '#667eea'; };
     } else if (chartMode === 'status') {
       colorOf = function (k) { return k === '待办' ? '#e67e22' : '#27ae60'; };
@@ -497,6 +565,8 @@
       var attr;
       if (chartMode === 'day') {
         attr = ' data-day="' + esc(k) + '"';
+      } else if (chartMode === 'month') {
+        attr = ' data-month="' + esc(k) + '"';
       } else if (chartMode === 'status') {
         attr = ' data-status="' + esc(k) + '"';
       } else {
@@ -513,6 +583,7 @@
 
       var lab = String(k);
       if (chartMode === 'day' && lab.length === 10) lab = lab.slice(5);   // 2026-10-31 → 10-31
+      if (chartMode === 'month' && lab.length === 7) lab = lab.slice(2);  // 2026-10 → 26-10
       if (lab.length > 7) lab = lab.slice(0, 7) + '…';
       s.push('<text x="' + cx.toFixed(1) + '" y="' + (T + ph + 20) + '" text-anchor="middle" font-size="11.5" fill="#95a5a6">' + esc(lab) + '</text>');
     });
@@ -526,12 +597,32 @@
   function syncChartUI() {
     if (chartMode !== 'day') dateFilter = '';         // 切走时清掉日期筛选
     if (chartMode !== 'status') statusFilter = '';    // 切走时清掉状态筛选
+    if (chartMode !== 'month') monthFilter = '';      // 切走时清掉月份筛选
     document.getElementById('btnChartTag').className = chartMode === 'tag' ? 'on' : '';
     document.getElementById('btnChartDay').className = chartMode === 'day' ? 'on' : '';
     document.getElementById('btnChartStatus').className = chartMode === 'status' ? 'on' : '';
+    document.getElementById('btnChartMonth').className = chartMode === 'month' ? 'on' : '';
     document.getElementById('chartModeName').textContent =
-      chartMode === 'tag' ? '按分类' : (chartMode === 'day' ? '按日期' : '按状态');
+      ({ tag: '按分类', day: '按日期', status: '按状态', month: '按月' })[chartMode] || '按分类';
     renderChart();
+  }
+
+  // 连续记录天数：从今天往前推，能连着几天都有记录
+  function calcStreak() {
+    var days = {};
+    records.forEach(function (r) {
+      var d = String(r.date || '').trim();
+      if (d.length === 10) days[d] = true;
+    });
+    var cur = new Date();
+    var pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+    var fmt = function (dt) { return dt.getFullYear() + '-' + pad(dt.getMonth() + 1) + '-' + pad(dt.getDate()); };
+
+    // 今天没有记录不算断，从昨天开始数（今天还没记是正常的）
+    if (!days[fmt(cur)]) { cur.setDate(cur.getDate() - 1); }
+    var n = 0;
+    while (days[fmt(cur)] && n < 3650) { n++; cur.setDate(cur.getDate() - 1); }
+    return n;
   }
 
   function getFiltered() {
@@ -545,6 +636,8 @@
       }
       // 日期筛选（点日期柱子产生）
       if (dateFilter && String(r.date || '').trim() !== dateFilter) return false;
+      // 月份筛选（点月份柱子产生）
+      if (monthFilter && String(r.date || '').trim().slice(0, 7) !== monthFilter) return false;
       // 状态筛选（点状态柱子产生）
       if (statusFilter) {
         var st = r.status === 'todo' ? '待办' : '已完成';
@@ -595,20 +688,33 @@
     document.getElementById('statTotal').textContent = records.length;
     document.getElementById('statDone').textContent = records.filter(function (r) { return r.status === 'done'; }).length;
     document.getElementById('statTodo').textContent = records.filter(function (r) { return r.status === 'todo'; }).length;
+    document.getElementById('statStreak').textContent = calcStreak();
 
     renderChart();
     renderTagbar();
 
     var shown = getFiltered();
+    matchHits = k ? buildHitList(shown, k) : [];
+    if (hitPos >= matchHits.length) hitPos = matchHits.length - 1;
     var hint = document.getElementById('hint');
-    var filtering = !!(k || tagFilter || dateFilter || statusFilter);
+    var filtering = !!(k || tagFilter || dateFilter || statusFilter || monthFilter);
 
-    if (dateFilter || statusFilter) {
+    if (dateFilter || statusFilter || monthFilter) {
       var bits = [];
+      if (monthFilter) bits.push('月份 <b>' + esc(monthFilter) + '</b>');
       if (dateFilter) bits.push('日期 <b>' + esc(dateFilter) + '</b>');
       if (statusFilter) bits.push('状态 <b>' + esc(statusFilter) + '</b>');
       hint.innerHTML = '正在看 ' + bits.join(' + ') + ' 的记录：显示 ' + shown.length + ' 条，共 ' + records.length + ' 条'
         + '<button class="clrfilter" id="btnClearDate">全部清除</button>';
+    } else if (k) {
+      var tot = 0;
+      shown.forEach(function (r) { tot += countHits(r, k); });
+      hint.innerHTML = '找到 ' + shown.length + ' 条，共 <b>' + tot + '</b> 处匹配'
+        + '<span class="jumpbar">'
+        +   '<button id="btnHitPrev" title="上一个命中">↑</button>'
+        +   '<span class="hitno" id="hitNo">' + (hitPos < 0 ? '—' : (hitPos + 1)) + '/' + tot + '</span>'
+        +   '<button id="btnHitNext" title="下一个命中">↓</button>'
+        + '</span>';
     } else {
       hint.textContent = filtering ? ('显示 ' + shown.length + ' 条，共 ' + records.length + ' 条') : '';
     }
@@ -625,7 +731,7 @@
       return;
     }
 
-    list.innerHTML = shown.map(function (r) {
+    list.innerHTML = shown.map(function (r, idx) {
       var cls = r.status === 'done' ? 'done' : 'todo';
       var txt = r.status === 'done' ? '已完成' : '待办';
       var isEditing = String(r.id) === String(editingId);
@@ -635,7 +741,7 @@
         : '';
 
       return '' +
-        '<div class="card" style="border-left-color:' + (t ? tagColor(t) : '#667eea') + (isEditing ? '' : '') + '">' +
+        '<div class="card" data-idx="' + idx + '" style="border-left-color:' + (t ? tagColor(t) : '#667eea') + (isEditing ? '' : '') + '">' +
           '<div class="actions">' +
             '<button class="icon-btn" data-edit="' + r.id + '" title="修改这条">✎</button>' +
             '<button class="icon-btn del" data-del="' + r.id + '" title="删除这条">×</button>' +
@@ -733,6 +839,7 @@
 
   document.getElementById('inSearch').addEventListener('input', function (e) {
     keyword = e.target.value;
+    hitPos = -1;
     render();
   });
 
@@ -805,6 +912,121 @@
   });
 
   // 导出 Markdown（给人看、给 AI 喂）
+  // 导出成 PNG：把当前统计图画成一张图片（纯 canvas，不依赖任何库）
+  document.getElementById('btnExportPng').addEventListener('click', function () {
+    if (records.length === 0) { alert('还没有记录可以导出'); return; }
+
+    var d = chartData();
+    var keys = d.keys, vals = d.vals;
+    if (keys.length === 0) { alert('当前图表没有数据'); return; }
+
+    var W = 1000, H = 620;
+    var cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    var g = cv.getContext('2d');
+
+    var dark = document.body.className === 'dark';
+    var bg = dark ? '#1a212b' : '#ffffff';
+    var fg = dark ? '#ccd3de' : '#2c3e50';
+    var muted = dark ? '#8b96a5' : '#95a5a6';
+    var gridc = dark ? '#2b3441' : '#eef0f5';
+
+    g.fillStyle = bg; g.fillRect(0, 0, W, H);
+
+    // 标题
+    g.fillStyle = fg;
+    g.font = 'bold 28px "Microsoft YaHei", sans-serif';
+    g.fillText('我的 DSH 学习记录', 50, 62);
+    g.fillStyle = muted;
+    g.font = '16px "Microsoft YaHei", sans-serif';
+    g.fillText('导出时间 ' + new Date().toLocaleString('zh-CN') + '　共 ' + records.length + ' 条', 50, 94);
+
+    // 三个统计数字
+    var doneN = records.filter(function (r) { return r.status === 'done'; }).length;
+    var todoN = records.length - doneN;
+    var stats = [['总记录', records.length], ['已完成', doneN], ['待办', todoN], ['连续记录', calcStreak() + ' 天']];
+    stats.forEach(function (s, i) {
+      var bx = 50 + i * 230;
+      g.fillStyle = dark ? '#232c38' : '#f5f6fa';
+      g.fillRect(bx, 120, 205, 76);
+      g.fillStyle = '#667eea';
+      g.font = 'bold 26px "Microsoft YaHei", sans-serif';
+      g.fillText(String(s[1]), bx + 20, 162);
+      g.fillStyle = muted;
+      g.font = '14px "Microsoft YaHei", sans-serif';
+      g.fillText(s[0], bx + 20, 184);
+    });
+
+    // 柱状图
+    var L = 90, R = W - 60, T = 250, B = 540;
+    var pw = R - L, ph = B - T;
+    var maxV = 0;
+    vals.forEach(function (v) { if (v > maxV) maxV = v; });
+    var top = Math.max(4, Math.ceil(maxV / 4) * 4);
+
+    // 网格
+    g.strokeStyle = gridc; g.lineWidth = 1;
+    g.fillStyle = muted; g.font = '13px "Microsoft YaHei", sans-serif';
+    for (var gi = 0; gi <= 4; gi++) {
+      var gy = T + ph * (gi / 4);
+      g.beginPath(); g.moveTo(L, gy); g.lineTo(R, gy); g.stroke();
+      g.fillText(String(Math.round(top * (1 - gi / 4))), 50, gy + 5);
+    }
+
+    var slot = pw / keys.length;
+    var barW = Math.min(70, Math.max(14, slot * 0.55));
+    keys.forEach(function (k, i) {
+      var v = vals[i];
+      var bh = ph * (v / top);
+      var cx = L + slot * i + slot / 2;
+      var color;
+      if (chartMode === 'status') color = (k === '待办' ? '#e67e22' : '#27ae60');
+      else if (chartMode === 'day' || chartMode === 'month') color = '#667eea';
+      else color = tagColor(k === '未分类' ? '' : k);
+
+      g.fillStyle = color;
+      var x = cx - barW / 2, y0 = B - bh;
+      var rr = 6;
+      // 圆角矩形
+      g.beginPath();
+      g.moveTo(x, B); g.lineTo(x, y0 + rr);
+      g.quadraticCurveTo(x, y0, x + rr, y0);
+      g.lineTo(x + barW - rr, y0);
+      g.quadraticCurveTo(x + barW, y0, x + barW, y0 + rr);
+      g.lineTo(x + barW, B);
+      g.closePath(); g.fill();
+
+      g.fillStyle = fg;
+      g.font = '14px "Microsoft YaHei", sans-serif';
+      g.textAlign = 'center';
+      g.fillText(String(v), cx, y0 - 10);
+
+      var lab = String(k);
+      if ((chartMode === 'day' || chartMode === 'month') && lab.length >= 7) lab = lab.slice(2);
+      if (lab.length > 8) lab = lab.slice(0, 8) + '…';
+      g.fillStyle = muted;
+      g.font = '13px "Microsoft YaHei", sans-serif';
+      g.fillText(lab, cx, B + 24);
+    });
+    g.textAlign = 'left';
+
+    // 页脚
+    g.fillStyle = muted; g.font = '13px "Microsoft YaHei", sans-serif';
+    g.fillText('统计方式：' + ({ tag: '按分类', day: '按日期', status: '按状态', month: '按月' })[chartMode]
+      + '　·　由「我的 DSH 学习记录」自动生成', 50, H - 30);
+
+    cv.toBlob(function (blob) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'DSH学习记录-统计图-' + todayStr() + '.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    }, 'image/png');
+  });
+
   document.getElementById('btnExportMd').addEventListener('click', function () {
     if (records.length === 0) { alert('还没有记录可以导出'); return; }
 
@@ -813,6 +1035,26 @@
     lines.push('');
     lines.push('> 导出时间：' + new Date().toLocaleString('zh-CN') + '　共 ' + records.length + ' 条');
     lines.push('');
+
+    // 统计小结
+    var doneN = records.filter(function (r) { return r.status === 'done'; }).length;
+    lines.push('**本月/总体速览**：已完成 ' + doneN + ' 条 · 待办 ' + (records.length - doneN)
+      + ' 条 · 连续记录 ' + calcStreak() + ' 天');
+    lines.push('');
+
+    // 按月分布
+    var monMap = {};
+    records.forEach(function (r) {
+      var d = String(r.date || '').trim();
+      if (d.length < 7) return;
+      var m = d.slice(0, 7);
+      monMap[m] = (monMap[m] || 0) + 1;
+    });
+    var mons = Object.keys(monMap).sort();
+    if (mons.length > 1) {
+      lines.push('**按月分布**：' + mons.map(function (m) { return m + ' 共 ' + monMap[m] + ' 条'; }).join(' · '));
+      lines.push('');
+    }
 
     // 按分类分组
     var groups = {};
@@ -860,21 +1102,38 @@
         incoming = incoming.filter(function (r) { return r && typeof r.title === 'string'; });
         if (incoming.length === 0) { alert('文件里的记录格式不对，没有导入任何内容。'); return; }
 
-        var mode = confirm(
-          '要导入 ' + incoming.length + ' 条记录。\n\n' +
-          '点【确定】= 追加到现有记录后面（不会删掉你现在的）\n' +
-          '点【取消】= 放弃导入'
+        var choice = prompt(
+          '要导入 ' + incoming.length + ' 条记录，选一种方式：\n\n' +
+          '  1 = 合并（只补充我没有的，原有记录一条不动）\n' +
+          '  2 = 更新（已经有的也用文件里的版本覆盖）\n\n' +
+          '输入 1 或 2，点取消则不导入。',
+          '1'
         );
-        if (!mode) return;
+        if (choice === null) return;
+        choice = String(choice).trim();
+        if (choice !== '1' && choice !== '2') { alert('只能输入 1 或 2，本次没有导入任何内容。'); return; }
 
-        // 去重：标题+日期相同视为同一条
-        var existKeys = {};
-        records.forEach(function (r) { existKeys[(r.title || '') + '|' + (r.date || '')] = true; });
+        var overwrite = (choice === '2');
 
-        var added = 0;
+        // 以「标题+日期」当唯一标识
+        var existMap = {};
+        records.forEach(function (r, i) { existMap[(r.title || '') + '|' + (r.date || '')] = i; });
+
+        var added = 0, updated = 0;
         incoming.forEach(function (r) {
           var key = (r.title || '') + '|' + (r.date || '');
-          if (existKeys[key]) return;
+          var at = existMap[key];
+
+          if (at !== undefined) {
+            if (overwrite) {
+              records[at].desc = r.desc || '';
+              records[at].tag = r.tag || '';
+              records[at].status = r.status === 'todo' ? 'todo' : 'done';
+              updated++;
+            }
+            return;
+          }
+
           records.unshift({
             id: Date.now() + Math.floor(Math.random() * 100000),
             title: r.title || '',
@@ -888,7 +1147,11 @@
 
         save(records);
         render();
-        alert('导入完成：新增 ' + added + ' 条' + (incoming.length - added > 0 ? '，跳过重复 ' + (incoming.length - added) + ' 条' : ''));
+        var msg = '导入完成：新增 ' + added + ' 条';
+        if (overwrite && updated > 0) msg += '，更新 ' + updated + ' 条';
+        var skipped = incoming.length - added - updated;
+        if (skipped > 0) msg += '，跳过重复 ' + skipped + ' 条';
+        alert(msg);
       } catch (err) {
         alert('导入失败：这个文件不是有效的备份文件。\n\n' + String(err).slice(0, 120));
       }
@@ -918,8 +1181,11 @@
     var d = bar.getAttribute('data-day');
     var t = bar.getAttribute('data-tag');
     var st = bar.getAttribute('data-status');
+    var mo = bar.getAttribute('data-month');
 
-    if (d) {
+    if (mo) {
+      monthFilter = (monthFilter === mo) ? '' : mo;
+    } else if (d) {
       dateFilter = (dateFilter === d) ? '' : d;   // 再点一次取消
     } else if (st) {
       statusFilter = (statusFilter === st) ? '' : st;
@@ -933,12 +1199,13 @@
 
   // 清除日期筛选（提示条里的按钮，事件委托）
   document.getElementById('hint').addEventListener('click', function (e) {
-    if (e.target && e.target.id === 'btnClearDate') { dateFilter = ''; statusFilter = ''; render(); }
+    if (e.target && e.target.id === 'btnClearDate') { dateFilter = ''; statusFilter = ''; monthFilter = ''; render(); }
   });
 
   document.getElementById('btnChartTag').addEventListener('click', function () { chartMode = 'tag'; syncChartUI(); });
   document.getElementById('btnChartDay').addEventListener('click', function () { chartMode = 'day'; syncChartUI(); });
   document.getElementById('btnChartStatus').addEventListener('click', function () { chartMode = 'status'; syncChartUI(); });
+  document.getElementById('btnChartMonth').addEventListener('click', function () { chartMode = 'month'; syncChartUI(); });
 
   // ============ 深色模式 ============
   function applyTheme(dark) {
