@@ -170,6 +170,39 @@
     .editor .row { flex-direction: column; gap: 0; }
     .card h3 { padding-right: 0; margin-right: 70px; }
   }
+
+  /* ===== 深色模式 ===== */
+  body.dark { background: #10141b; color: #ccd3de; }
+  body.dark header h1 { color: #e9eef6; }
+  body.dark header p { color: #7f8a9b; }
+  body.dark .stat, body.dark .chart, body.dark .editor, body.dark .card { background: #1a212b; box-shadow: 0 2px 12px rgba(0,0,0,.45); }
+  body.dark .stat .num { color: #8fa0ff; }
+  body.dark .stat .label { color: #78838f; }
+  body.dark .chart h2, body.dark .editor h2 { color: #ccd3de; }
+  body.dark .chart .switch button, body.dark .tagbtn, body.dark .tbtn, body.dark .clrfilter { background: #232c38; border-color: #333e4d; color: #9aa5b5; }
+  body.dark .chart .switch button.on, body.dark .tagbtn.active { background: #5568d3; border-color: #5568d3; color: #fff; }
+  body.dark .searchbar input, body.dark .editor input[type=text], body.dark .editor textarea, body.dark .editor .row input, body.dark .editor .row select { background: #232c38; border-color: #333e4d; color: #ccd3de; }
+  body.dark .searchbar .clr { background: #2b3441; color: #9aa5b5; }
+  body.dark .hint, body.dark footer, body.dark .card .date, body.dark .chart .tiph { color: #78838f; }
+  body.dark .card p { color: #b8c1cd; }
+  body.dark .card.editing-now { background: #2a2416; }
+  body.dark .tag { background: #2a3350; color: #9aa8ff; }
+  body.dark .tag.done { background: #14301f; color: #4ade80; }
+  body.dark .tag.todo { background: #33260f; color: #fbbf24; }
+  body.dark .btn.ghost { background: #232c38; color: #9aa5b5; }
+  body.dark .empty { color: #6b7684; }
+  body.dark mark { background: #6b5d1f; color: #fffbe6; }
+  body.dark .icon-btn { color: #5c6775; }
+  body.dark .chart svg text { fill: #8b96a5; }
+  body.dark .chart svg line { stroke: #2b3441; }
+
+  #btnTheme {
+    position: fixed; right: 18px; bottom: 18px; z-index: 99;
+    width: 46px; height: 46px; border-radius: 50%; border: none;
+    background: #667eea; color: #fff; font-size: 20px; cursor: pointer;
+    box-shadow: 0 4px 16px rgba(102,126,234,.4); transition: .2s;
+  }
+  #btnTheme:hover { transform: scale(1.08); }
 </style>
 </head>
 <body>
@@ -191,6 +224,7 @@
     <div class="switch">
       <button id="btnChartTag" class="on">按分类</button>
       <button id="btnChartDay">按日期</button>
+      <button id="btnChartStatus">按状态</button>
     </div>
   </div>
   <div id="chartBox"></div>
@@ -205,6 +239,7 @@
     <button class="tbtn" id="btnExportMd">导出成 Markdown</button>
     <button class="tbtn" id="btnImport">从文件导入</button>
     <input type="file" id="fileInput" accept=".json" style="display:none">
+    <button class="tbtn" id="btnClearDone">清理已完成</button>
     <button class="tbtn danger" id="btnWipe">清空全部记录</button>
   </div>
 
@@ -244,6 +279,8 @@
 </main>
 
 <footer>用 DSH 边学边做 · 2026</footer>
+
+<button id="btnTheme" title="切换深色/浅色模式">🌙</button>
 
 <script>
   var STORAGE_KEY = 'dsh_learning_records';
@@ -357,6 +394,7 @@
   var keyword = '';
   var tagFilter = '';   // 空字符串 = 全部
   var dateFilter = '';  // 点日期柱子产生的日期筛选
+  var statusFilter = '';  // 点状态柱子产生的状态筛选
 
   function esc(s) {
     return String(s == null ? '' : s)
@@ -375,7 +413,7 @@
   function tagOf(r) { return (r.tag || '').trim(); }
 
   // ============ 统计图：纯手绘 SVG，不依赖任何外部图表库 ============
-  var chartMode = 'tag';   // tag = 按分类，day = 按日期
+  var chartMode = 'tag';   // tag = 按分类，day = 按日期，status = 按状态
 
   function chartData() {
     var map = {}, order = [];
@@ -387,6 +425,13 @@
         map[d]++;
       });
       order.sort();                                            // 日期从早到晚
+    } else if (chartMode === 'status') {
+      records.forEach(function (r) {
+        var st = r.status === 'todo' ? '待办' : '已完成';
+        if (!map[st]) { map[st] = 0; order.push(st); }
+        map[st]++;
+      });
+      order.sort(function (a, b) { return map[b] - map[a]; });
     } else {
       records.forEach(function (r) {
         var t = tagOf(r) || '未分类';
@@ -420,6 +465,15 @@
     var slot = pw / keys.length;
     var barW = Math.min(56, Math.max(12, slot * 0.55));
 
+    var colorOf;
+    if (chartMode === 'day') {
+      colorOf = function () { return '#667eea'; };
+    } else if (chartMode === 'status') {
+      colorOf = function (k) { return k === '待办' ? '#e67e22' : '#27ae60'; };
+    } else {
+      colorOf = function (k) { return tagColor(k === '未分类' ? '' : k); };
+    }
+
     var s = [];
     s.push('<svg viewBox="0 0 ' + W + ' ' + H + '" role="img">');
 
@@ -438,11 +492,16 @@
       var cx = L + slot * i + slot / 2;
       var x = cx - barW / 2;
       var yTop = T + ph - bh;
-      var color = chartMode === 'day' ? '#667eea' : tagColor(k === '未分类' ? '' : k);
+      var color = colorOf(k);
 
-      var attr = chartMode === 'day'
-        ? ' data-day="' + esc(k) + '"'
-        : ' data-tag="' + esc(k === '未分类' ? '__none__' : k) + '"';
+      var attr;
+      if (chartMode === 'day') {
+        attr = ' data-day="' + esc(k) + '"';
+      } else if (chartMode === 'status') {
+        attr = ' data-status="' + esc(k) + '"';
+      } else {
+        attr = ' data-tag="' + esc(k === '未分类' ? '__none__' : k) + '"';
+      }
 
       s.push('<rect class="bar" x="' + x.toFixed(1) + '" y="' + yTop.toFixed(1) + '" width="' + barW.toFixed(1)
         + '" height="' + Math.max(bh, 1).toFixed(1) + '" rx="5" fill="' + color + '"' + attr + '>'
@@ -465,10 +524,13 @@
   }
 
   function syncChartUI() {
-    if (chartMode !== 'day') dateFilter = '';   // 切回分类模式时清掉日期筛选
+    if (chartMode !== 'day') dateFilter = '';         // 切走时清掉日期筛选
+    if (chartMode !== 'status') statusFilter = '';    // 切走时清掉状态筛选
     document.getElementById('btnChartTag').className = chartMode === 'tag' ? 'on' : '';
     document.getElementById('btnChartDay').className = chartMode === 'day' ? 'on' : '';
-    document.getElementById('chartModeName').textContent = chartMode === 'tag' ? '按分类' : '按日期';
+    document.getElementById('btnChartStatus').className = chartMode === 'status' ? 'on' : '';
+    document.getElementById('chartModeName').textContent =
+      chartMode === 'tag' ? '按分类' : (chartMode === 'day' ? '按日期' : '按状态');
     renderChart();
   }
 
@@ -483,6 +545,11 @@
       }
       // 日期筛选（点日期柱子产生）
       if (dateFilter && String(r.date || '').trim() !== dateFilter) return false;
+      // 状态筛选（点状态柱子产生）
+      if (statusFilter) {
+        var st = r.status === 'todo' ? '待办' : '已完成';
+        if (st !== statusFilter) return false;
+      }
       // 关键词
       if (!k) return true;
       return String(r.title || '').toLowerCase().indexOf(k) >= 0
@@ -534,11 +601,14 @@
 
     var shown = getFiltered();
     var hint = document.getElementById('hint');
-    var filtering = !!(k || tagFilter || dateFilter);
+    var filtering = !!(k || tagFilter || dateFilter || statusFilter);
 
-    if (dateFilter) {
-      hint.innerHTML = '正在看 <b>' + esc(dateFilter) + '</b> 的记录：显示 ' + shown.length + ' 条，共 ' + records.length + ' 条'
-        + '<button class="clrfilter" id="btnClearDate">清除日期筛选</button>';
+    if (dateFilter || statusFilter) {
+      var bits = [];
+      if (dateFilter) bits.push('日期 <b>' + esc(dateFilter) + '</b>');
+      if (statusFilter) bits.push('状态 <b>' + esc(statusFilter) + '</b>');
+      hint.innerHTML = '正在看 ' + bits.join(' + ') + ' 的记录：显示 ' + shown.length + ' 条，共 ' + records.length + ' 条'
+        + '<button class="clrfilter" id="btnClearDate">全部清除</button>';
     } else {
       hint.textContent = filtering ? ('显示 ' + shown.length + ' 条，共 ' + records.length + ' 条') : '';
     }
@@ -847,9 +917,12 @@
 
     var d = bar.getAttribute('data-day');
     var t = bar.getAttribute('data-tag');
+    var st = bar.getAttribute('data-status');
 
     if (d) {
       dateFilter = (dateFilter === d) ? '' : d;   // 再点一次取消
+    } else if (st) {
+      statusFilter = (statusFilter === st) ? '' : st;
     } else if (t) {
       tagFilter = (tagFilter === t) ? '' : t;
     } else {
@@ -860,11 +933,40 @@
 
   // 清除日期筛选（提示条里的按钮，事件委托）
   document.getElementById('hint').addEventListener('click', function (e) {
-    if (e.target && e.target.id === 'btnClearDate') { dateFilter = ''; render(); }
+    if (e.target && e.target.id === 'btnClearDate') { dateFilter = ''; statusFilter = ''; render(); }
   });
 
   document.getElementById('btnChartTag').addEventListener('click', function () { chartMode = 'tag'; syncChartUI(); });
   document.getElementById('btnChartDay').addEventListener('click', function () { chartMode = 'day'; syncChartUI(); });
+  document.getElementById('btnChartStatus').addEventListener('click', function () { chartMode = 'status'; syncChartUI(); });
+
+  // ============ 深色模式 ============
+  function applyTheme(dark) {
+    document.body.className = dark ? 'dark' : '';
+    var b = document.getElementById('btnTheme');
+    if (b) b.textContent = dark ? '☀️' : '🌙';
+  }
+  (function initTheme() {
+    var saved = null;
+    try { saved = localStorage.getItem('dsh_theme_dark'); } catch (e) {}
+    applyTheme(saved === '1');
+  })();
+  document.getElementById('btnTheme').addEventListener('click', function () {
+    var dark = document.body.className !== 'dark';
+    applyTheme(dark);
+    try { localStorage.setItem('dsh_theme_dark', dark ? '1' : '0'); } catch (e) {}
+  });
+
+  // ============ 清理已完成 ============
+  document.getElementById('btnClearDone').addEventListener('click', function () {
+    var doneCount = records.filter(function (r) { return r.status === 'done'; }).length;
+    if (doneCount === 0) { alert('没有已完成的记录'); return; }
+    if (!confirm('要清理掉 ' + doneCount + ' 条「已完成」的记录吗？\n\n待办会原样保留。\n强烈建议先点「导出备份」，否则删了就找不回来。')) return;
+    records = records.filter(function (r) { return r.status !== 'done'; });
+    if (editingId !== null && !records.some(function (r) { return String(r.id) === String(editingId); })) resetForm();
+    save(records);
+    render();
+  });
 
   document.getElementById('inDate').value = new Date().toISOString().slice(0, 10);
   boot();
