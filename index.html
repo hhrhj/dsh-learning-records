@@ -48,6 +48,11 @@
     cursor: pointer; font-family: inherit; margin-left: 6px;
   }
   .clrfilter:hover { border-color: #b8c0e0; color: #5568d3; }
+  .checkup {
+    max-width: 860px; margin: 0 auto 16px; background: #f8f9fd;
+    border: 1px solid #e4e8f2; border-radius: 14px; padding: 14px 18px;
+  }
+  body.dark .checkup { background: #1a212b; border-color: #2b3441; }
   .jumpbar { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; }
   .jumpbar button {
     border: 1px solid #dfe4ea; background: #fff; color: #7f8c8d;
@@ -255,9 +260,12 @@
     <button class="tbtn" id="btnExportPng">导出成图片（PNG）</button>
     <button class="tbtn" id="btnImport">从文件导入</button>
     <input type="file" id="fileInput" accept=".json" style="display:none">
+    <button class="tbtn" id="btnCheckup">数据体检</button>
     <button class="tbtn" id="btnClearDone">清理已完成</button>
     <button class="tbtn danger" id="btnWipe">清空全部记录</button>
   </div>
+
+  <div class="checkup" id="checkupBox" style="display:none"></div>
 
   <div class="tagbar" id="tagbar"></div>
 
@@ -879,6 +887,93 @@
   });
 
 
+  // ============ 数据体检（纯只读，不写不删不改任何数据） ============
+  function runCheckup() {
+    var box = document.getElementById('checkupBox');
+    var rows = [];
+    var warn = 0;
+
+    function add(ok, text) {
+      rows.push('<div style="padding:4px 0;font-size:13.5px;' + (ok ? 'color:#27ae60' : 'color:#e67e22') + '">'
+        + (ok ? '✅' : '⚠️') + ' ' + text + '</div>');
+      if (!ok) warn++;
+    }
+
+    var total = records.length;
+    var doneN = 0, todoN = 0;
+    var idMap = {}, keyMap = {}, badDate = [], futureDate = [], emptyTitle = [];
+    var pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+    var now = new Date();
+    var todayStr = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+    var validDate = function (s) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+      return !isNaN(new Date(s).getTime());        // 拦住 2026-13-05 这种格式对但日期不存在的
+    };
+
+    records.forEach(function (r) {
+      if (r.status === 'todo') todoN++; else doneN++;
+      var idk = String(r.id);
+      idMap[idk] = (idMap[idk] || 0) + 1;
+      var kk = (r.title || '') + '|' + (r.date || '');
+      keyMap[kk] = (keyMap[kk] || 0) + 1;
+      if (!String(r.title || '').trim()) emptyTitle.push(idk);
+      var d = String(r.date || '').trim();
+      if (d) {
+        if (!validDate(d)) badDate.push((r.title || idk) + '（' + d + '）');
+        else if (d > todayStr) futureDate.push((r.title || idk) + '（' + d + '）');
+      }
+    });
+
+    var dupIds = Object.keys(idMap).filter(function (k) { return idMap[k] > 1; });
+    var dupKeys = Object.keys(keyMap).filter(function (k) { return keyMap[k] > 1; });
+
+    add(true, '总记录 <b>' + total + '</b> 条（已完成 ' + doneN + ' / 待办 ' + todoN + '）');
+    add(dupIds.length === 0, dupIds.length === 0 ? '没有重复 id' : '发现 ' + dupIds.length + ' 个重复 id：' + esc(dupIds.slice(0, 5).join('、')));
+    add(dupKeys.length === 0, dupKeys.length === 0 ? '没有完全重复的记录（标题+日期）' : '发现 ' + dupKeys.length + ' 组重复：' + esc(dupKeys.slice(0, 3).join('；')));
+    add(emptyTitle.length === 0, emptyTitle.length === 0 ? '没有空标题' : emptyTitle.length + ' 条标题是空的（id：' + esc(emptyTitle.slice(0, 5).join('、')) + '）');
+    add(badDate.length === 0, badDate.length === 0 ? '日期全部有效' : badDate.length + ' 条日期无效（格式错或日期不存在）：' + esc(badDate.slice(0, 5).join('、')));
+    add(futureDate.length === 0, futureDate.length === 0 ? '没有未来日期的记录' : futureDate.length + ' 条日期在未来：' + esc(futureDate.slice(0, 5).join('、')));
+
+    var streak = calcStreak();
+    var last = '';
+    records.forEach(function (r) {
+      var d = String(r.date || '').trim();
+      if (d && validDate(d) && d <= todayStr && d > last) last = d;   // 只用有效且不晚于今天的日期
+    });
+    if (total === 0) {
+      add(false, '还没有任何记录');
+    } else if (!last) {
+      add(false, '没有可用的日期，没法统计连续天数');
+    } else {
+      var diff = Math.round((new Date(todayStr) - new Date(last)) / 86400000);
+      if (diff <= 1) add(true, '连续记录 <b>' + streak + '</b> 天，最后一条 ' + esc(last) + '（保持得不错）');
+      else if (diff <= 7) add(true, '连续记录 ' + streak + ' 天，最后一条 ' + esc(last) + '（距今 ' + diff + ' 天）');
+      else add(false, '已经 <b>' + diff + '</b> 天没有新记录（最后一条 ' + esc(last) + '）。学东西了吗？记一条吧');
+    }
+
+    var local = localLoad();
+    if (local && local.length !== total) {
+      add(false, '浏览器备份（' + local.length + ' 条）和当前数据（' + total + ' 条）不一致，建议先点「导出备份」留档');
+    } else if (serverMode) {
+      add(true, '已连上本地服务器，数据存在 records.json 文件里');
+    } else {
+      add(false, '纯浏览器模式：数据只存在这个浏览器里，清缓存会丢。建议双击启动脚本连上服务器');
+    }
+
+    var sizeKB = (JSON.stringify(records).length / 1024).toFixed(1);
+    add(true, '数据量 ' + sizeKB + ' KB');
+
+    box.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+      + '<b style="font-size:14px;color:#34495e">数据体检报告</b>'
+      + '<button class="clrfilter" id="btnCheckupClose">关闭</button></div>'
+      + (warn === 0
+          ? '<div style="font-size:13px;color:#27ae60;margin-bottom:4px">全部通过，没有发现问题 👍</div>'
+          : '<div style="font-size:13px;color:#e67e22;margin-bottom:4px">发现 ' + warn + ' 个需要注意的地方</div>')
+      + rows.join('');
+    box.style.display = 'block';
+    box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
   // ============ 导出 / 导入 ============
   function todayStr() {
     var d = new Date();
@@ -1206,6 +1301,11 @@
   document.getElementById('btnChartDay').addEventListener('click', function () { chartMode = 'day'; syncChartUI(); });
   document.getElementById('btnChartStatus').addEventListener('click', function () { chartMode = 'status'; syncChartUI(); });
   document.getElementById('btnChartMonth').addEventListener('click', function () { chartMode = 'month'; syncChartUI(); });
+
+  document.getElementById('btnCheckup').addEventListener('click', function () { runCheckup(); });
+  document.getElementById('checkupBox').addEventListener('click', function (e) {
+    if (e.target && e.target.id === 'btnCheckupClose') { document.getElementById('checkupBox').style.display = 'none'; }
+  });
 
   // ============ 深色模式 ============
   function applyTheme(dark) {
